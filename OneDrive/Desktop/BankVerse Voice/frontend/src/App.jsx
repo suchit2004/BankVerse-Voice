@@ -10,7 +10,6 @@ function App() {
   const mediaRecorderRef = useRef(null)
 
   useEffect(() => {
-    // Connect to Backend WebSocket
     ws.current = new WebSocket('ws://localhost:8000/ws/audio')
     
     ws.current.onopen = () => console.log('WebSocket Connected')
@@ -27,9 +26,9 @@ function App() {
           snd.play().catch(e => console.error("Audio playback failed:", e));
         } else if (data.regional_response) {
           const synth = window.speechSynthesis;
-          synth.cancel(); // Cancel any ongoing speech
+          synth.cancel();
           const utterance = new SpeechSynthesisUtterance(data.regional_response);
-          utterance.lang = "mr-IN"; // Use Marathi voice if available
+          utterance.lang = "mr-IN";
           utterance.rate = 1.0;
           synth.speak(utterance);
         }

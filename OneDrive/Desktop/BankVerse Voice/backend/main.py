@@ -239,11 +239,9 @@ async def websocket_endpoint(websocket: WebSocket):
     chat_history = []
     try:
         while True:
-            # 1. Receive data (text or bytes)
             message = await websocket.receive()
             
             if "text" in message:
-                # Check for UI Commands like summarize
                 try:
                     text_data = json.loads(message["text"])
                     if text_data.get("action") == "summarize":
@@ -256,22 +254,17 @@ async def websocket_endpoint(websocket: WebSocket):
             if "bytes" in message:
                 audio_data = message["bytes"]
                 
-                # Step 1: Speech to Text
                 original_transcript = await asr.transcribe(audio_data)
                 english_transcript = await translator.translate_to_english(original_transcript)
                 
-                # Step 3: LLM Intent Extraction & Staff Guidance Generation
                 llm_result = await llm.generate_guidance(english_transcript, chat_history)
                 
-                # Update Context Memory
                 chat_history.append({"role": "user", "content": f"Customer: {english_transcript}"})
                 chat_history.append({"role": "assistant", "content": f"Agent Guidance: {llm_result.get('prompt')} | Reccomended Reply: {llm_result.get('suggested_response')}"})
                 
-                # Step 4: Translation and TTS
                 regional_response = await translator.translate_to_regional(llm_result["suggested_response"])
                 cloud_audio_b64 = await tts.synthesize(regional_response)
                 
-                # Step 5: Send payload
                 response_payload = {
                     "type": "message",
                     "transcript": original_transcript,
