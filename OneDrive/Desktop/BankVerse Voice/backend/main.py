@@ -293,6 +293,30 @@ ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (
                 )
                 return json.loads(final_completion.choices[0].message.content)
 
+            # View loans intent handler
+            if result.get("intent") == "view_loans":
+                cust = session_state.get("authenticated_customer") if session_state else None
+                if not cust:
+                    sys_msg = "System Action Result: Access Denied. The customer is not authenticated. They must identify themselves and verify their 4-digit code first."
+                else:
+                    loans = db_manager.get_loan_details(cust["customer_id"])
+                    if loans:
+                        loans_str = "\n".join([f"- Loan ID {l['loan_id']} ({l['loan_type'].capitalize()} Loan): Principal: ₹{l['amount']:,.2f}, Outstanding: ₹{l['outstanding_balance']:,.2f}, Interest Rate: {l['interest_rate']}%, EMI: ₹{l['emi_amount']:,.2f}/month, Next EMI Date: {l['next_emi_date']}" for l in loans])
+                        sys_msg = f"System Action Result: The active loans for {cust['name']} are:\n{loans_str}\nUpdate your JSON. The 'prompt' MUST summarize this loan status for the staff."
+                    else:
+                        sys_msg = f"System Action Result: No active loans found for {cust['name']}. Inform the staff."
+                
+                messages.append({"role": "assistant", "content": block_json_str if 'block_json_str' in locals() else result_str})
+                messages.append({"role": "user", "content": sys_msg})
+                
+                final_completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model="llama-3.1-8b-instant",
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                return json.loads(final_completion.choices[0].message.content)
+
             # RAG Document Retrieval block
             if result.get("intent") == "policy_inquiry":
                 topic = result.get("entities", {}).get("policy_topic", "")
