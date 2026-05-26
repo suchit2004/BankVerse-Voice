@@ -130,3 +130,15 @@ def transfer_funds(from_account: str, to_account: str, amount: float, descriptio
         return {"success": False, "error": str(e)}
     finally:
         conn.close()
+
+def get_policy_by_topic(topic: str):
+    """ Fetch policy information by matching the topic keyword. """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM policies WHERE LOWER(topic) LIKE LOWER(?) OR LOWER(policy_name) LIKE LOWER(?)",
+        (f"%{topic}%", f"%{topic}%")
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
