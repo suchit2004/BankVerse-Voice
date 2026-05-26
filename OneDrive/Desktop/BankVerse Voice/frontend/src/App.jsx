@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import './App.css'
 
 function App() {
   const [isRecording, setIsRecording] = useState(false)
@@ -6,6 +7,14 @@ function App() {
   const [guidancePrompt, setGuidancePrompt] = useState('Waiting for conversation to begin...')
   const [summary, setSummary] = useState(null)
   const [isDarkMode, setIsDarkMode] = useState(true)
+  
+  // Custom banking session states
+  const [customer, setCustomer] = useState(null)
+  const [accounts, setAccounts] = useState([])
+  const [language, setLanguage] = useState("Marathi")
+  const [speechRate, setSpeechRate] = useState(1.0)
+  const [autoSpeak, setAutoSpeak] = useState(true)
+  
   const ws = useRef(null)
   const mediaRecorderRef = useRef(null)
 
@@ -17,20 +26,35 @@ function App() {
       const data = JSON.parse(event.data)
       if (data.type === "summary") {
         setSummary(data.content)
+      } else if (data.type === "language_changed") {
+        setLanguage(data.language)
       } else {
         setMessages(prev => [...prev, data])
         if (data.prompt) setGuidancePrompt(data.prompt)
         
-        if (data.audio_base64) {
-          const snd = new Audio("data:audio/mp3;base64," + data.audio_base64);
-          snd.play().catch(e => console.error("Audio playback failed:", e));
-        } else if (data.regional_response) {
-          const synth = window.speechSynthesis;
-          synth.cancel();
-          const utterance = new SpeechSynthesisUtterance(data.regional_response);
-          utterance.lang = "mr-IN";
-          utterance.rate = 1.0;
-          synth.speak(utterance);
+        // Track customer authentication & accounts
+        if (data.customer) setCustomer(data.customer)
+        if (data.accounts) setAccounts(data.accounts)
+        if (data.language) setLanguage(data.language)
+        
+        if (autoSpeak) {
+          if (data.audio_base64) {
+            const snd = new Audio("data:audio/mp3;base64," + data.audio_base64);
+            snd.playbackRate = speechRate;
+            snd.play().catch(e => console.error("Audio playback failed:", e));
+          } else if (data.regional_response) {
+            const synth = window.speechSynthesis;
+            synth.cancel();
+            const utterance = new SpeechSynthesisUtterance(data.regional_response);
+            
+            // Set dynamic language and rate
+            if (data.language === "Hindi") utterance.lang = "hi-IN";
+            else if (data.language === "English") utterance.lang = "en-US";
+            else utterance.lang = "mr-IN";
+            
+            utterance.rate = speechRate;
+            synth.speak(utterance);
+          }
         }
       }
     }
@@ -177,46 +201,120 @@ function App() {
             </div>
           </div>
 
-          {/* AI Guidance Side Panel */}
-          <div className={`flex flex-col rounded-2xl p-6 h-full border backdrop-blur-md transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg'}`}>
-            <h2 className={`text-sm font-semibold mb-5 flex items-center gap-2 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-              <span className="flex h-2 w-2 rounded-full bg-pink-400"></span>
-              AI Guidance
-            </h2>
+          {/* AI Guidance & Customer Details Side Panel */}
+          <div className="flex flex-col space-y-6">
             
-            <div className={`flex-1 rounded-xl p-5 border backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/50 border-pink-900/30' : 'bg-white/80 border-pink-100 shadow-sm'}`}>
-              <p className={`text-base leading-relaxed ${isDarkMode ? 'text-pink-100/90' : 'text-slate-700'}`}>
-                {guidancePrompt}
-              </p>
+            {/* Customer Profile Card */}
+            <div className={`rounded-2xl p-6 border backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg'}`}>
+              <h2 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                <span className={`h-2.5 w-2.5 rounded-full ${customer ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                Customer Profile
+              </h2>
+              
+              {!customer ? (
+                <div className={`p-4 rounded-xl border text-center transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/50 border-slate-800/50 text-slate-400' : 'bg-white/80 border-slate-200/80 text-slate-500 shadow-sm'}`}>
+                  <p className="text-sm font-medium mb-1">🔴 Verification Required</p>
+                  <p className="text-xs">Ask customer to state their name or customer ID to begin authentication.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Verified Header */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className={`text-base font-bold font-display ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>{customer.name}</h3>
+                      <p className="text-[10px] text-slate-550">ID: {customer.customer_id}</p>
+                    </div>
+                    <span className="text-[9px] font-bold tracking-wider uppercase bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                      {customer.kyc_status}
+                    </span>
+                  </div>
+
+                  {/* Details */}
+                  <div className="text-xs space-y-1 text-slate-400">
+                    <p><span className="text-slate-500 font-medium">Phone:</span> {customer.phone}</p>
+                    <p><span className="text-slate-500 font-medium">Email:</span> {customer.email}</p>
+                  </div>
+
+                  {/* Credit Score Progress Ring */}
+                  <div className="pt-3 border-t border-slate-800/60 flex items-center gap-4">
+                    <div className="relative h-12 w-12 flex items-center justify-center">
+                      <svg className="w-full h-full transform -rotate-90">
+                        <circle cx="24" cy="24" r="20" className="stroke-slate-800" strokeWidth="3" fill="transparent" />
+                        <circle cx="24" cy="24" r="20" className="stroke-pink-500 score-ring" strokeWidth="3" fill="transparent"
+                          strokeDasharray={`${2 * Math.PI * 20}`}
+                          strokeDashoffset={`${2 * Math.PI * 20 * (1 - customer.credit_score / 900)}`} />
+                      </svg>
+                      <span className="absolute text-[10px] font-bold text-slate-300 font-display">{customer.credit_score}</span>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-slate-450">Credit Score</p>
+                      <p className={`text-xs font-bold ${customer.credit_score >= 750 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                        {customer.credit_score >= 750 ? 'Excellent' : customer.credit_score >= 650 ? 'Good' : 'Needs Work'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="mt-6 flex flex-col gap-3">
-              <button className={`w-full py-2.5 px-4 rounded-lg transition-colors flex justify-between items-center text-sm font-medium border ${isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800 border-slate-700/50 text-slate-300' : 'bg-white/90 hover:bg-white border-slate-200/80 text-slate-700 shadow-sm'}`}>
-                <span>View Profile</span>
-                <span className={isDarkMode ? 'text-slate-500' : 'text-slate-400'}>→</span>
-              </button>
-              <button className={`w-full py-2.5 px-4 rounded-lg transition-colors flex justify-between items-center text-sm font-medium border ${isDarkMode ? 'bg-blue-500/10 hover:bg-blue-500/20 border-blue-500/20 text-blue-300' : 'bg-blue-50 hover:bg-blue-100 border-blue-100 text-blue-700 shadow-sm'}`}>
-                <span>New Service Request</span>
-                <span className={isDarkMode ? 'text-blue-400' : 'text-blue-500'}>→</span>
-              </button>
-              <button 
-                onClick={() => {
-                  if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-                    ws.current.send(JSON.stringify({action: "summarize"}));
-                  }
-                }}
-                className={`w-full py-2.5 px-4 rounded-lg transition-colors flex justify-between items-center text-sm font-medium border ${isDarkMode ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700 shadow-sm'}`}>
-                <span>End & Summarize</span>
-                <span>✨</span>
-              </button>
-            </div>
-
-            {summary && (
-              <div className={`mt-6 p-4 rounded-xl border transition-colors ${isDarkMode ? 'bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-emerald-500/30' : 'bg-emerald-50 border-emerald-200'}`}>
-                <h3 className={`text-sm font-bold mb-2 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>Interaction Summary</h3>
-                <p className={`text-sm whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{summary}</p>
+            {/* Account Balances Card */}
+            {customer && accounts.length > 0 && (
+              <div className={`rounded-2xl p-6 border backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg'}`}>
+                <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                  <span>💳</span> Accounts & Balances
+                </h2>
+                <div className="space-y-3">
+                  {accounts.map((acc, index) => (
+                    <div key={index} className="bank-card rounded-xl p-4 border border-slate-800/50">
+                      <div className="flex justify-between items-start text-[10px] text-slate-400 mb-1">
+                        <span className="uppercase font-semibold tracking-wider">{acc.account_type}</span>
+                        <span className="text-slate-500">{acc.account_number}</span>
+                      </div>
+                      <div className="text-lg font-bold text-slate-100 font-display">
+                        ₹{acc.balance.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                      <div className="mt-2 text-[9px] text-emerald-400 flex items-center gap-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> Active
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
+
+            {/* AI Guidance Side Panel */}
+            <div className={`flex-1 flex flex-col rounded-2xl p-6 border backdrop-blur-md transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg'}`}>
+              <h2 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                <span className="flex h-2 w-2 rounded-full bg-pink-400"></span>
+                AI Guidance
+              </h2>
+              
+              <div className={`flex-1 rounded-xl p-5 border backdrop-blur-sm transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/50 border-pink-900/30' : 'bg-white/80 border-pink-100 shadow-sm'}`}>
+                <p className={`text-base leading-relaxed ${isDarkMode ? 'text-pink-100/90' : 'text-slate-700'}`}>
+                  {guidancePrompt}
+                </p>
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3">
+                <button 
+                  onClick={() => {
+                    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                      ws.current.send(JSON.stringify({action: "summarize"}));
+                    }
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-lg transition-colors flex justify-between items-center text-sm font-medium border ${isDarkMode ? 'bg-emerald-500/10 hover:bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700 shadow-sm'}`}>
+                  <span>End & Summarize</span>
+                  <span>✨</span>
+                </button>
+              </div>
+
+              {summary && (
+                <div className={`mt-6 p-4 rounded-xl border transition-colors ${isDarkMode ? 'bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-emerald-500/30' : 'bg-emerald-50 border-emerald-200'}`}>
+                  <h3 className={`text-sm font-bold mb-2 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>Interaction Summary</h3>
+                  <p className={`text-sm whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{summary}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </main>
