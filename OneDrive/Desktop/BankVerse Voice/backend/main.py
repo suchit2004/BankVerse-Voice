@@ -51,6 +51,8 @@ class TranslationModule:
         self.client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 
     async def translate_to_english(self, text: str, source_lang="Marathi") -> str:
+        if source_lang.lower() == "english":
+            return text
         try:
             system_prompt = f"You are a professional translator. Translate the following text from {source_lang} to English. Provide ONLY the translated English text. Do not add any conversational filler, explanations, or quotes around the output."
             chat_completion = await self.client.chat.completions.create(
@@ -67,6 +69,8 @@ class TranslationModule:
             return "Hello, I need information about my account."
     
     async def translate_to_regional(self, text: str, target_lang="Marathi") -> str:
+        if target_lang.lower() == "english":
+            return text
         try:
             system_prompt = f"You are a professional translator. Translate the following English text to {target_lang}. Provide ONLY the translated {target_lang} text. Do not add any conversational filler, explanations, or quotes around the output."
             chat_completion = await self.client.chat.completions.create(
@@ -438,7 +442,8 @@ async def websocket_endpoint(websocket: WebSocket):
     chat_history = []
     session_state = {
         "authenticated_customer": None,
-        "auth_pending_customer": None
+        "auth_pending_customer": None,
+        "language": "Marathi"
     }
     try:
         while True:
@@ -450,6 +455,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     if text_data.get("action") == "summarize":
                         summary = await llm.generate_summary(chat_history)
                         await websocket.send_text(json.dumps({"type": "summary", "content": summary}))
+                    elif text_data.get("action") == "set_language":
+                        lang = text_data.get("language", "Marathi")
+                        if lang in ["English", "Marathi", "Hindi"]:
+                            session_state["language"] = lang
+                            await websocket.send_text(json.dumps({"type": "language_changed", "language": lang}))
                 except:
                     pass
                 continue
@@ -458,14 +468,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 audio_data = message["bytes"]
                 
                 original_transcript = await asr.transcribe(audio_data)
-                english_transcript = await translator.translate_to_english(original_transcript)
+                english_transcript = await translator.translate_to_english(original_transcript, source_lang=session_state["language"])
                 
                 llm_result = await llm.generate_guidance(english_transcript, chat_history, session_state)
                 
                 chat_history.append({"role": "user", "content": f"Customer: {english_transcript}"})
                 chat_history.append({"role": "assistant", "content": f"Agent Guidance: {llm_result.get('prompt')} | Reccomended Reply: {llm_result.get('suggested_response')}"})
                 
-                regional_response = await translator.translate_to_regional(llm_result["suggested_response"])
+                regional_response = await translator.translate_to_regional(llm_result["suggested_response"], target_lang=session_state["language"])
                 cloud_audio_b64 = await tts.synthesize(regional_response)
                 
                 accounts_info = None
@@ -483,7 +493,8 @@ async def websocket_endpoint(websocket: WebSocket):
                     "regional_response": regional_response,
                     "audio_base64": cloud_audio_b64,
                     "customer": session_state["authenticated_customer"],
-                    "accounts": accounts_info
+                    "accounts": accounts_info,
+                    "language": session_state["language"]
                 }
                 await websocket.send_text(json.dumps(response_payload))
                 
