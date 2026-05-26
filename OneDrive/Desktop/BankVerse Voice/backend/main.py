@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from groq import AsyncGroq
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import db_manager
 
 load_dotenv(override=True)
 from fastapi.middleware.cors import CORSMiddleware
