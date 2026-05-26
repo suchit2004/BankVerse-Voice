@@ -317,6 +317,65 @@ ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (
                 )
                 return json.loads(final_completion.choices[0].message.content)
 
+            # Transfer funds intent handler
+            if result.get("intent") == "transfer_funds":
+                recipient = result.get("entities", {}).get("recipient_name")
+                amount_str = result.get("entities", {}).get("amount", "0")
+                
+                try:
+                    # Clean up commas or non-numeric symbols if any
+                    clean_amount = str(amount_str).replace(",", "").replace("₹", "").strip()
+                    amount = float(clean_amount)
+                except ValueError:
+                    amount = 0.0
+                    
+                cust = session_state.get("authenticated_customer") if session_state else None
+                if not cust:
+                    sys_msg = "System Action Result: Access Denied. The customer is not authenticated. They must identify themselves and verify their 4-digit code first."
+                elif amount <= 0:
+                    sys_msg = f"System Action Result: Invalid transfer amount: {amount_str}. Ask the customer to state the amount clearly."
+                elif not recipient:
+                    sys_msg = "System Action Result: Recipient name is missing. Ask the customer who they would like to transfer funds to."
+                else:
+                    sender_accs = db_manager.get_customer_accounts(cust["customer_id"])
+                    sender_savings = next((a for a in sender_accs if a["account_type"] == "savings"), None)
+                    
+                    recipient_cust = db_manager.get_customer_by_name(recipient)
+                    
+                    if not sender_savings:
+                        sys_msg = f"System Action Result: Sender {cust['name']} has no savings account to transfer funds from. Inform the staff."
+                    elif not recipient_cust:
+                        sys_msg = f"System Action Result: Recipient {recipient} not found in bank records. Ask the customer to clarify the recipient name."
+                    else:
+                        rec_accs = db_manager.get_customer_accounts(recipient_cust["customer_id"])
+                        rec_savings = next((a for a in rec_accs if a["account_type"] == "savings"), None)
+                        
+                        if not rec_savings:
+                            sys_msg = f"System Action Result: Recipient {recipient_cust['name']} has no savings account to credit. Inform the staff."
+                        else:
+                            transfer_res = db_manager.transfer_funds(
+                                sender_savings["account_number"],
+                                rec_savings["account_number"],
+                                amount,
+                                f"Voice transfer from {cust['name']}"
+                            )
+                            if transfer_res["success"]:
+                                new_bal = f"₹{transfer_res['new_balance']:,.2f}"
+                                sys_msg = f"System Action Result: Successful transfer of ₹{amount:,.2f} to {recipient_cust['name']}. Sender's remaining balance is {new_bal}. Update your JSON. The 'prompt' MUST state the successful transfer to the staff."
+                            else:
+                                sys_msg = f"System Action Result: Transfer failed. Reason: {transfer_res['error']}. Inform the staff."
+                                
+                messages.append({"role": "assistant", "content": result_str})
+                messages.append({"role": "user", "content": sys_msg})
+                
+                final_completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model="llama-3.1-8b-instant",
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                return json.loads(final_completion.choices[0].message.content)
+
             # RAG Document Retrieval block
             if result.get("intent") == "policy_inquiry":
                 topic = result.get("entities", {}).get("policy_topic", "")
