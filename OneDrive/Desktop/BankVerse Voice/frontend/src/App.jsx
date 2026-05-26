@@ -307,6 +307,64 @@ function App() {
 
           {/* AI Guidance & Customer Details Side Panel */}
           <div className="flex flex-col space-y-6">
+
+            {/* System Configuration & Speech settings */}
+            <div className={`rounded-2xl p-6 border backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg'}`}>
+              <h2 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <span>⚙️</span> Speech & Language Settings
+              </h2>
+              
+              <div className="space-y-4">
+                {/* Language selection */}
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1.5">Voice Assistant Language</label>
+                  <div className="flex gap-2">
+                    {["Marathi", "Hindi", "English"].map((lang) => (
+                      <button
+                        key={lang}
+                        onClick={() => {
+                          setLanguage(lang);
+                          if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                            ws.current.send(JSON.stringify({action: "set_language", language: lang}));
+                          }
+                        }}
+                        className={`flex-1 py-1 text-[10px] font-bold rounded border transition-all duration-200 ${language === lang ? (isDarkMode ? 'bg-blue-500/20 border-blue-500 text-blue-300' : 'bg-blue-50 border-blue-500 text-blue-750') : (isDarkMode ? 'bg-slate-900/50 border-slate-800 text-slate-400 hover:bg-slate-800/60' : 'bg-slate-50 border-slate-200 text-slate-650 hover:bg-slate-100')}`}
+                      >
+                        {lang}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Speech rate slider */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Voice Speed</label>
+                    <span className="text-[10px] font-bold text-slate-450 font-display">{speechRate}x</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="2.0"
+                    step="0.1"
+                    value={speechRate}
+                    onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Auto Speak toggle switch */}
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Auto Play TTS</span>
+                  <button
+                    onClick={() => setAutoSpeak(!autoSpeak)}
+                    className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors duration-300 ${autoSpeak ? 'bg-emerald-500' : 'bg-slate-800'}`}
+                  >
+                    <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform duration-300 ${autoSpeak ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+              </div>
+            </div>
             
             {/* Customer Profile Card */}
             <div className={`rounded-2xl p-6 border backdrop-blur-md transition-all duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-white/60 shadow-lg'}`}>
