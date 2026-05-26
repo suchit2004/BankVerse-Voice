@@ -139,10 +139,19 @@ function App() {
               )}
             </button>
             <div className={`flex items-center gap-3 px-4 py-2 rounded-full border transition-colors duration-300 backdrop-blur-md ${isDarkMode ? 'bg-slate-900/40 border-slate-800/60' : 'bg-white/60 border-slate-200/60 shadow-sm'}`}>
-              <span className="relative flex h-2 w-2">
-                {isRecording && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>}
-                <span className={`relative inline-flex rounded-full h-2 w-2 ${isRecording ? 'bg-rose-500' : 'bg-emerald-500'}`}></span>
-              </span>
+              {isRecording ? (
+                <div className="waveform-container h-3.5">
+                  <div className="waveform-bar active h-2.5"></div>
+                  <div className="waveform-bar active h-3"></div>
+                  <div className="waveform-bar active h-2.5"></div>
+                  <div className="waveform-bar active h-3.5"></div>
+                  <div className="waveform-bar active h-2"></div>
+                </div>
+              ) : (
+                <span className="relative flex h-2 w-2">
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              )}
               <span className={`text-sm font-medium ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{isRecording ? "Listening" : "System Active"}</span>
             </div>
           </div>
@@ -241,6 +250,27 @@ function App() {
 
             {/* Mic & Text Backup Controls */}
             <div className={`pt-4 flex flex-col items-center justify-center pb-6 border-t transition-colors duration-300 ${isDarkMode ? 'border-slate-800/60' : 'border-slate-200/60'}`}>
+              
+              {isRecording && (
+                <div className="waveform-container justify-center mb-4">
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                  <div className="waveform-bar active"></div>
+                </div>
+              )}
+
               <div className="flex items-center gap-4 w-full max-w-md justify-center px-4">
                 <button 
                   onClick={toggleRecording}
