@@ -257,6 +257,42 @@ ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (
                 )
                 return json.loads(final_completion.choices[0].message.content)
 
+            # View transactions intent handler
+            if result.get("intent") == "view_transactions":
+                acc_type = result.get("entities", {}).get("account_type", "savings")
+                if isinstance(acc_type, str):
+                    acc_type = acc_type.lower()
+                else:
+                    acc_type = "savings"
+                    
+                cust = session_state.get("authenticated_customer") if session_state else None
+                if not cust:
+                    sys_msg = "System Action Result: Access Denied. The customer is not authenticated. They must identify themselves and verify their 4-digit code first."
+                else:
+                    accounts = db_manager.get_customer_accounts(cust["customer_id"])
+                    matching_acc = next((a for a in accounts if a["account_type"] == acc_type), None)
+                    if matching_acc:
+                        txs = db_manager.get_recent_transactions(matching_acc['account_number'], limit=5)
+                        if txs:
+                            txs_str = "\n".join([f"- {t['type'].upper()} of ₹{t['amount']:,.2f}: {t['description']}" for t in txs])
+                            sys_msg = f"System Action Result: The recent transactions for {cust['name']}'s {acc_type} account ({matching_acc['account_number']}) are:\n{txs_str}\nUpdate your JSON. The 'prompt' MUST summarize these transactions clearly for the staff to read."
+                        else:
+                            sys_msg = f"System Action Result: No transaction history found for {cust['name']}'s {acc_type} account ({matching_acc['account_number']}). Inform the staff."
+                    else:
+                        available_accs = ", ".join([f"{a['account_type']} ({a['account_number']})" for a in accounts])
+                        sys_msg = f"System Action Result: The customer {cust['name']} does not have a {acc_type} account. They have: {available_accs}. Inform the staff."
+                
+                messages.append({"role": "assistant", "content": result_str})
+                messages.append({"role": "user", "content": sys_msg})
+                
+                final_completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model="llama-3.1-8b-instant",
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                return json.loads(final_completion.choices[0].message.content)
+
             # RAG Document Retrieval block
             if result.get("intent") == "policy_inquiry":
                 topic = result.get("entities", {}).get("policy_topic", "")
