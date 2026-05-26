@@ -233,21 +233,21 @@ ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (
                 else:
                     acc_type = "savings"
                     
-                import sqlite3, os
-                db_path = os.path.join(os.path.dirname(__file__), "bank_data.db")
-                try:
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT balance FROM accounts WHERE account_type = ?", (acc_type,))
-                    row = cursor.fetchone()
-                    conn.close()
-                    bal = f"₹{row[0]:,.2f}" if row else "₹0.00"
-                except Exception as e:
-                    print(f"DB Error: {e}")
-                    bal = "Error fetching balance"
+                cust = session_state.get("authenticated_customer") if session_state else None
+                if not cust:
+                    sys_msg = "System Action Result: Access Denied. The customer is not authenticated. They must identify themselves and verify their 4-digit code first."
+                else:
+                    accounts = db_manager.get_customer_accounts(cust["customer_id"])
+                    matching_acc = next((a for a in accounts if a["account_type"] == acc_type), None)
+                    if matching_acc:
+                        bal = f"₹{matching_acc['balance']:,.2f}"
+                        sys_msg = f"System Action Result: The customer {cust['name']}'s {acc_type} account ({matching_acc['account_number']}) balance is {bal}. Update your JSON. The 'prompt' MUST state this exact balance to the staff."
+                    else:
+                        available_accs = ", ".join([f"{a['account_type']} ({a['account_number']})" for a in accounts])
+                        sys_msg = f"System Action Result: The customer {cust['name']} does not have a {acc_type} account. They have: {available_accs}. State this and ask if they wish to check another account."
                 
                 messages.append({"role": "assistant", "content": result_str})
-                messages.append({"role": "user", "content": f"System Action Result: The {acc_type} account balance is {bal}. Now update your JSON. The 'prompt' MUST state the exact balance to the staff."})
+                messages.append({"role": "user", "content": sys_msg})
                 
                 final_completion = await self.client.chat.completions.create(
                     messages=messages,
