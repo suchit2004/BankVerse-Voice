@@ -110,7 +110,7 @@ class BankingLLM:
     def __init__(self):
         self.client = AsyncGroq(api_key=os.environ.get("GROQ_API_KEY"))
 
-    async def generate_guidance(self, english_text: str, chat_history: list = None) -> dict:
+    async def generate_guidance(self, english_text: str, chat_history: list = None, session_state: dict = None) -> dict:
         if not self.client:
             await asyncio.sleep(0.5)
             return {
@@ -123,11 +123,35 @@ class BankingLLM:
         try:
             system_prompt = """You are BankVerse Voice, an AI assistant for frontline bank branch staff in India.
 Your goal is to guide the staff on how to assist the customer based on the live translated transcript.
-If the customer asks for a balance, set intent to 'check_balance' and extract the 'account_type' entity (savings, current, or loan).
-If the customer asks about bank procedures (loans, cards, account closure), set intent to 'policy_inquiry' and extract 'policy_topic'.
+
+CUSTOMER AUTHENTICATION RULES:
+1. If the customer is NOT authenticated (the system will provide auth status), they must be authenticated before checking balance, viewing transactions, loan inquiries, or transferring funds.
+2. To authenticate, they must first state their name or customer ID (intent: 'request_auth', entities: 'customer_name' or 'customer_id').
+3. Once we find the customer, they must state their 4-digit verification code (intent: 'verify_auth', entities: 'verification_code').
+4. If they try to check balance, transfer funds, or view transactions without being logged in, tell them they need to authenticate first.
+
+AVAILABLE INTENTS:
+- 'request_auth': Stating name/ID to log in. Entities: 'customer_name', 'customer_id'.
+- 'verify_auth': Speaking 4-digit verification code. Entities: 'verification_code'.
+- 'check_balance': Checking account balance. Entities: 'account_type' (savings, current, loan, fixed_deposit).
+- 'view_transactions': Listing recent transactions. Entities: 'account_type'.
+- 'view_loans': Inquiring about outstanding loans.
+- 'transfer_funds': Sending money. Entities: 'recipient_name' (str) and 'amount' (number).
+- 'policy_inquiry': General bank guidelines. Entities: 'policy_topic' (loan, card, close).
+
 ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (dict), "prompt", and "suggested_response"."""
 
-            messages = [{"role": "system", "content": system_prompt}]
+            current_status = "UNAUTHENTICATED"
+            if session_state and session_state.get("authenticated_customer"):
+                cust = session_state["authenticated_customer"]
+                current_status = f"AUTHENTICATED as ID: {cust['customer_id']}, Name: {cust['name']}, Credit Score: {cust['credit_score']}"
+            elif session_state and session_state.get("auth_pending_customer"):
+                cust = session_state["auth_pending_customer"]
+                current_status = f"AUTH_PENDING (Verification code requested for Name: {cust['name']})"
+
+            system_prompt_with_state = f"{system_prompt}\n\nCurrent Session Auth Status: {current_status}"
+
+            messages = [{"role": "system", "content": system_prompt_with_state}]
             if chat_history:
                 messages.extend(chat_history[-10:])
             messages.append({"role": "user", "content": f"Customer transcript: {english_text}"})
@@ -141,6 +165,65 @@ ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (
             
             result_str = chat_completion.choices[0].message.content
             result = json.loads(result_str)
+            
+            # --- Intent Execution Block ---
+            
+            # Customer Authentication Request
+            if result.get("intent") == "request_auth":
+                name = result.get("entities", {}).get("customer_name")
+                cust_id = result.get("entities", {}).get("customer_id")
+                
+                customer = None
+                if cust_id:
+                    customer = db_manager.get_customer_by_id(cust_id)
+                elif name:
+                    customer = db_manager.get_customer_by_name(name)
+                    
+                if customer:
+                    if session_state is not None:
+                        session_state["auth_pending_customer"] = customer
+                    sys_msg = f"System Auth Result: Customer found: {customer['name']} (ID: {customer['customer_id']}). State to user that we found their profile and ask for their 4-digit verification code."
+                else:
+                    sys_msg = "System Auth Result: Customer not found. Prompt the customer to repeat their name or ID."
+                    
+                messages.append({"role": "assistant", "content": result_str})
+                messages.append({"role": "user", "content": sys_msg})
+                
+                final_completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model="llama-3.1-8b-instant",
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                return json.loads(final_completion.choices[0].message.content)
+
+            # Customer Verification Code
+            if result.get("intent") == "verify_auth":
+                code = result.get("entities", {}).get("verification_code")
+                pending_cust = session_state.get("auth_pending_customer") if session_state else None
+                
+                if not pending_cust:
+                    sys_msg = "System Verification Result: No authentication request is pending. Ask the customer to state their name first."
+                else:
+                    is_valid = db_manager.verify_customer_code(pending_cust["customer_id"], str(code))
+                    if is_valid:
+                        if session_state is not None:
+                            session_state["authenticated_customer"] = pending_cust
+                            session_state["auth_pending_customer"] = None
+                        sys_msg = f"System Verification Result: Success. The customer {pending_cust['name']} is now logged in. Thank them and ask how to help."
+                    else:
+                        sys_msg = "System Verification Result: Failed. The verification code is incorrect. Ask them to speak the code again."
+                        
+                messages.append({"role": "assistant", "content": result_str})
+                messages.append({"role": "user", "content": sys_msg})
+                
+                final_completion = await self.client.chat.completions.create(
+                    messages=messages,
+                    model="llama-3.1-8b-instant",
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                return json.loads(final_completion.choices[0].message.content)
             
             # Formally execute the mock function manually if requested by the LLM
             if result.get("intent") == "check_balance":
@@ -238,6 +321,10 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     print("Client connected via WebSocket.")
     chat_history = []
+    session_state = {
+        "authenticated_customer": None,
+        "auth_pending_customer": None
+    }
     try:
         while True:
             message = await websocket.receive()
@@ -258,13 +345,18 @@ async def websocket_endpoint(websocket: WebSocket):
                 original_transcript = await asr.transcribe(audio_data)
                 english_transcript = await translator.translate_to_english(original_transcript)
                 
-                llm_result = await llm.generate_guidance(english_transcript, chat_history)
+                llm_result = await llm.generate_guidance(english_transcript, chat_history, session_state)
                 
                 chat_history.append({"role": "user", "content": f"Customer: {english_transcript}"})
                 chat_history.append({"role": "assistant", "content": f"Agent Guidance: {llm_result.get('prompt')} | Reccomended Reply: {llm_result.get('suggested_response')}"})
                 
                 regional_response = await translator.translate_to_regional(llm_result["suggested_response"])
                 cloud_audio_b64 = await tts.synthesize(regional_response)
+                
+                accounts_info = None
+                if session_state["authenticated_customer"]:
+                    cust_id = session_state["authenticated_customer"]["customer_id"]
+                    accounts_info = db_manager.get_customer_accounts(cust_id)
                 
                 response_payload = {
                     "type": "message",
@@ -274,7 +366,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     "prompt": llm_result["prompt"],
                     "suggested_response": llm_result["suggested_response"],
                     "regional_response": regional_response,
-                    "audio_base64": cloud_audio_b64
+                    "audio_base64": cloud_audio_b64,
+                    "customer": session_state["authenticated_customer"],
+                    "accounts": accounts_info
                 }
                 await websocket.send_text(json.dumps(response_payload))
                 
