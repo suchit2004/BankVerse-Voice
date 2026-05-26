@@ -11,6 +11,7 @@ function App() {
   // Custom banking session states
   const [customer, setCustomer] = useState(null)
   const [accounts, setAccounts] = useState([])
+  const [transactions, setTransactions] = useState([])
   const [language, setLanguage] = useState("Marathi")
   const [speechRate, setSpeechRate] = useState(1.0)
   const [autoSpeak, setAutoSpeak] = useState(true)
@@ -35,6 +36,7 @@ function App() {
         // Track customer authentication & accounts
         if (data.customer) setCustomer(data.customer)
         if (data.accounts) setAccounts(data.accounts)
+        if (data.transactions) setTransactions(data.transactions)
         if (data.language) setLanguage(data.language)
         
         if (autoSpeak) {
@@ -182,21 +184,93 @@ function App() {
                 ))
               )}
             </div>
-
-            {/* Mic Controls */}
-            <div className={`pt-4 flex flex-col items-center justify-center pb-6 border-t transition-colors duration-300 ${isDarkMode ? 'border-slate-800/60' : 'border-slate-200/60'}`}>
-              <button 
-                onClick={toggleRecording}
-                className={`relative flex items-center justify-center w-16 h-16 rounded-full transition-all duration-300 backdrop-blur-md border ${isRecording ? (isDarkMode ? 'bg-rose-500/10 border-rose-500/30' : 'bg-rose-50 border-rose-200') : (isDarkMode ? 'bg-slate-800/60 hover:bg-slate-700 border-slate-700' : 'bg-white/80 hover:bg-white border-slate-200 shadow-sm')}`}
-              >
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors duration-300 ${isRecording ? 'bg-rose-500/90 text-white shadow-inner' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                  </svg>
+            
+            {/* Dynamic Interactive Widgets for Staff */}
+            {customer && (
+              <div className={`rounded-xl p-5 border backdrop-blur-md transition-colors duration-300 ${isDarkMode ? 'bg-slate-900/30 border-slate-800/60' : 'bg-white/50 border-slate-200 shadow-sm'}`}>
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-semibold flex items-center gap-2">
+                    <span>📊</span> Recent Transactions (Savings)
+                  </h3>
+                  <button 
+                    onClick={() => {
+                      const recName = prompt("Enter recipient name (e.g. Priya Sharma):", "Priya Sharma");
+                      const amt = prompt("Enter amount to transfer (₹):", "500");
+                      if (recName && amt) {
+                         const cmd = `transfer ${amt} to ${recName}`;
+                         if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                           ws.current.send(JSON.stringify({action: "simulate_voice", text: cmd}));
+                         }
+                      }
+                    }}
+                    className="text-[10px] font-bold text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 px-2 py-1 rounded border border-blue-500/25 transition-all duration-200"
+                  >
+                    💸 Quick Transfer
+                  </button>
                 </div>
-              </button>
-              <p className={`text-xs font-medium mt-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                {isRecording ? "Listening..." : "Tap to listen"}
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left text-slate-400">
+                    <thead className={`text-[10px] uppercase tracking-wider ${isDarkMode ? 'bg-slate-900/50 text-slate-500' : 'bg-slate-100 text-slate-650'}`}>
+                      <tr>
+                        <th className="py-2 px-3">Type</th>
+                        <th className="py-2 px-3">Amount</th>
+                        <th className="py-2 px-3">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/40">
+                      {transactions && transactions.length > 0 ? (
+                        transactions.map((tx, idx) => (
+                          <tr key={idx} className="hover:bg-slate-800/10 transition-colors">
+                            <td className={`py-2 px-3 font-bold ${tx.type === 'deposit' ? 'text-emerald-450' : 'text-rose-450'}`}>
+                              {tx.type.toUpperCase()}
+                            </td>
+                            <td className="py-2 px-3 text-slate-200 font-semibold">₹{tx.amount.toLocaleString('en-IN', {minimumFractionDigits: 2})}</td>
+                            <td className="py-2 px-3 text-xs">{tx.description}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="3" className="text-center py-4 text-slate-600">No transactions loaded. Select accounts or verify profile to begin.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Mic & Text Backup Controls */}
+            <div className={`pt-4 flex flex-col items-center justify-center pb-6 border-t transition-colors duration-300 ${isDarkMode ? 'border-slate-800/60' : 'border-slate-200/60'}`}>
+              <div className="flex items-center gap-4 w-full max-w-md justify-center px-4">
+                <button 
+                  onClick={toggleRecording}
+                  className={`relative flex items-center justify-center w-16 h-16 rounded-full transition-all duration-300 backdrop-blur-md border ${isRecording ? (isDarkMode ? 'bg-rose-500/10 border-rose-500/30' : 'bg-rose-50 border-rose-200') : (isDarkMode ? 'bg-slate-800/60 hover:bg-slate-700 border-slate-700' : 'bg-white/80 hover:bg-white border-slate-200 shadow-sm')}`}
+                >
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center transition-colors duration-300 ${isRecording ? 'bg-rose-500/90 text-white shadow-inner' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  </div>
+                </button>
+                
+                <div className="flex-1 flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="Type simulated customer speech..."
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.target.value.trim()) {
+                        if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+                          ws.current.send(JSON.stringify({action: "simulate_voice", text: e.target.value}));
+                          e.target.value = '';
+                        }
+                      }
+                    }}
+                    className={`w-full text-xs px-3.5 py-2.5 rounded-lg border transition-colors duration-300 focus:outline-none ${isDarkMode ? 'bg-slate-900/60 border-slate-800 focus:border-blue-500/50 text-slate-200 placeholder:text-slate-600' : 'bg-white border-slate-200 focus:border-blue-500/50 text-slate-700 placeholder:text-slate-400 shadow-inner'}`}
+                  />
+                </div>
+              </div>
+              <p className={`text-[10px] font-medium mt-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                {isRecording ? "Listening to microphone..." : "Tap Mic or type phrase and press Enter to simulate customer speak"}
               </p>
             </div>
           </div>

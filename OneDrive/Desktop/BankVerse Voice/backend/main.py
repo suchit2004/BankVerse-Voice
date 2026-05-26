@@ -460,6 +460,42 @@ async def websocket_endpoint(websocket: WebSocket):
                         if lang in ["English", "Marathi", "Hindi"]:
                             session_state["language"] = lang
                             await websocket.send_text(json.dumps({"type": "language_changed", "language": lang}))
+                    elif text_data.get("action") == "simulate_voice":
+                        raw_text = text_data.get("text", "")
+                        english_transcript = await translator.translate_to_english(raw_text, source_lang=session_state["language"])
+                        
+                        llm_result = await llm.generate_guidance(english_transcript, chat_history, session_state)
+                        
+                        chat_history.append({"role": "user", "content": f"Customer: {english_transcript}"})
+                        chat_history.append({"role": "assistant", "content": f"Agent Guidance: {llm_result.get('prompt')} | Reccomended Reply: {llm_result.get('suggested_response')}"})
+                        
+                        regional_response = await translator.translate_to_regional(llm_result["suggested_response"], target_lang=session_state["language"])
+                        cloud_audio_b64 = await tts.synthesize(regional_response)
+                        
+                        accounts_info = None
+                        transactions_info = None
+                        if session_state["authenticated_customer"]:
+                            cust_id = session_state["authenticated_customer"]["customer_id"]
+                            accounts_info = db_manager.get_customer_accounts(cust_id)
+                            savings_acc = next((a for a in accounts_info if a["account_type"] == "savings"), None)
+                            if savings_acc:
+                                transactions_info = db_manager.get_recent_transactions(savings_acc["account_number"], limit=5)
+                        
+                        response_payload = {
+                            "type": "message",
+                            "transcript": raw_text,
+                            "translation": english_transcript,
+                            "speaker": "Customer",
+                            "prompt": llm_result["prompt"],
+                            "suggested_response": llm_result["suggested_response"],
+                            "regional_response": regional_response,
+                            "audio_base64": cloud_audio_b64,
+                            "customer": session_state["authenticated_customer"],
+                            "accounts": accounts_info,
+                            "transactions": transactions_info,
+                            "language": session_state["language"]
+                        }
+                        await websocket.send_text(json.dumps(response_payload))
                 except:
                     pass
                 continue
@@ -479,9 +515,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 cloud_audio_b64 = await tts.synthesize(regional_response)
                 
                 accounts_info = None
+                transactions_info = None
                 if session_state["authenticated_customer"]:
                     cust_id = session_state["authenticated_customer"]["customer_id"]
                     accounts_info = db_manager.get_customer_accounts(cust_id)
+                    # Find savings account to fetch transactions for
+                    savings_acc = next((a for a in accounts_info if a["account_type"] == "savings"), None)
+                    if savings_acc:
+                        transactions_info = db_manager.get_recent_transactions(savings_acc["account_number"], limit=5)
                 
                 response_payload = {
                     "type": "message",
@@ -494,6 +535,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     "audio_base64": cloud_audio_b64,
                     "customer": session_state["authenticated_customer"],
                     "accounts": accounts_info,
+                    "transactions": transactions_info,
                     "language": session_state["language"]
                 }
                 await websocket.send_text(json.dumps(response_payload))
