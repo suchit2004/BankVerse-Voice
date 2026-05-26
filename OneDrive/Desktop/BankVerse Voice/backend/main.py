@@ -379,16 +379,12 @@ ALWAYS output a final JSON containing exactly these keys: "intent", "entities" (
             # RAG Document Retrieval block
             if result.get("intent") == "policy_inquiry":
                 topic = result.get("entities", {}).get("policy_topic", "")
-                topic_lower = str(topic).lower()
                 
-                if "loan" in topic_lower:
-                    policy_text = "BankVerse Home Loan Policy: Require Proof of identity (Aadhar/PAN), Last 6 months bank statements, Last 3 months salary slips. Interest rate 8.5% p.a. minimum."
-                elif "card" in topic_lower:
-                    policy_text = "BankVerse Credit Card Policy: Minimum credit score of 750 required. Zero joining fee for the first year."
-                elif "close" in topic_lower or "closure" in topic_lower:
-                    policy_text = "BankVerse Account Closure Policy: Customer must visit their home branch in-person with original passbook and checkbook."
+                policy = db_manager.get_policy_by_topic(str(topic))
+                if policy:
+                    policy_text = f"{policy['policy_name']}: {policy['policy_content']}"
                 else:
-                    policy_text = "No exact policy retrieved for this topic. Ask customer to contact general support on 1800-BANK-VERSE."
+                    policy_text = f"No exact policy retrieved for topic '{topic}'. Ask customer to contact general support on 1800-BANK-VERSE."
                 
                 messages.append({"role": "assistant", "content": result_str})
                 messages.append({"role": "user", "content": f"System RAG Result: Retrieved policy snippet: '{policy_text}'. Update your JSON. The 'prompt' MUST summarize this exact policy for the staff to read."})
