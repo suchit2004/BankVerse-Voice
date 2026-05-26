@@ -98,8 +98,43 @@ function App() {
         console.error("Error accessing microphone", err)
         alert("Microphone access is required.")
       }
+  const exportSummary = () => {
+    if (!summary) return;
+    let content = `=========================================\n`;
+    content += `   BANKVERSE VOICE FRONT-OFFICE CRM LOG   \n`;
+    content += `=========================================\n\n`;
+    if (customer) {
+      content += `Customer Name:   ${customer.name}\n`;
+      content += `Customer ID:     ${customer.customer_id}\n`;
+      content += `Verification:    KYC Verified\n`;
+      content += `Credit Score:    ${customer.credit_score}\n\n`;
     }
-  }
+    content += `Active Language: ${language}\n`;
+    content += `Date/Time:       ${new Date().toLocaleString()}\n`;
+    content += `-----------------------------------------\n`;
+    content += `Bilingual CRM Summary:\n\n`;
+    content += `${summary}\n\n`;
+    content += `-----------------------------------------\n`;
+    content += `Transcript Logs:\n`;
+    messages.forEach((msg, idx) => {
+      content += `[${msg.speaker}] Transcript: ${msg.transcript}\n`;
+      content += `[${msg.speaker}] Translation: ${msg.translation}\n`;
+      if (msg.suggested_response) {
+        content += `[Agent Suggested Response]: ${msg.suggested_response}\n`;
+      }
+      content += `\n`;
+    });
+    
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `BankVerse_CRM_Summary_${customer ? customer.name.replace(/\\s+/g, '_') : 'Session'}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className={`relative min-h-screen font-sans transition-colors duration-300 overflow-x-hidden ${isDarkMode ? 'bg-slate-950 text-slate-300 selection:bg-pink-500/30' : 'bg-slate-50 text-slate-700 selection:bg-pink-500/20'}`}>
@@ -474,6 +509,12 @@ function App() {
                 <div className={`mt-6 p-4 rounded-xl border transition-colors ${isDarkMode ? 'bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border-emerald-500/30' : 'bg-emerald-50 border-emerald-200'}`}>
                   <h3 className={`text-sm font-bold mb-2 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>Interaction Summary</h3>
                   <p className={`text-sm whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{summary}</p>
+                  <button
+                    onClick={exportSummary}
+                    className="mt-3 w-full py-2 px-3 rounded text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/25 transition-colors"
+                  >
+                    💾 Download CRM Log (.txt)
+                  </button>
                 </div>
               )}
             </div>
